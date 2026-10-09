@@ -256,5 +256,5 @@ app.post("/", (req, res) => {
     }
   }
 
-  res.json({ fulfillmentText: responseText });
+   res.json({ fulfillmentText: responseText + "\n\n[DEBUG] " + JSON.stringify(prefs) });
 });
