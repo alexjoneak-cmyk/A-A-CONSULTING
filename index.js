@@ -185,6 +185,23 @@ function collectParams(body) {
 
 const first = (v) => (Array.isArray(v) ? v[0] : v);
 
+const BODY_TYPES = ["hatchback", "sedan", "mini suv", "suv", "minivan", "pickup truck"];
+const FUEL_TYPES = ["petrol", "diesel", "hybrid", "ev"];
+const USAGE_TYPES = ["city commuting", "highway travel", "off road", "family trips", "business", "buisness"];
+
+// Finds a value by what it IS, not by what the parameter is named
+function findByValue(params, allowed, preferredKeys) {
+  for (const k of preferredKeys) {
+    const v = first(params[k]);
+    if (v && allowed.includes(String(v).toLowerCase())) return String(v).toLowerCase();
+  }
+  for (const v of Object.values(params)) {
+    const val = first(v);
+    if (typeof val === "string" && allowed.includes(val.toLowerCase())) return val.toLowerCase();
+  }
+  return null;
+}
+
 // Friendly message when you open the URL in a browser
 app.get("/", (req, res) => {
   res.send("Car recommendation webhook is running.");
@@ -194,26 +211,34 @@ app.post("/", (req, res) => {
   const params = collectParams(req.body);
   console.log("PARAMS RECEIVED:", JSON.stringify(params));
 
-  let usage = first(params["usage-type"]);
-  if (usage && usage.toLowerCase() === "buisness") usage = "business"; // entity typo
+  let usage = findByValue(params, USAGE_TYPES, ["usage-type"]);
+  if (usage === "buisness") usage = "business"; // entity typo
 
   const prefs = {
     budget: parseBudgetRange(first(params.budget)),
-    bodyType: first(params["body-type"]),
-    fuelType: first(params["fuel-type"]),
+    bodyType: findByValue(params, BODY_TYPES, ["body-type", "bodytype", "body_type", "car-type"]),
+    fuelType: findByValue(params, FUEL_TYPES, ["fuel-type", "fuel_type", "fueltype"]),
     usage: usage,
     passengers: parsePassengers(first(params.passengers))
   };
+  console.log("PREFS USED:", JSON.stringify(prefs));
 
-  // If a budget was given, only consider cars inside it (when any exist)
+  // 1) Body type is a hard filter, so asking for an SUV never returns a sedan
   let pool = cars;
+  if (prefs.bodyType) {
+    const sameBody = cars.filter((c) => c.bodyType === prefs.bodyType);
+    if (sameBody.length > 0) pool = sameBody;
+  }
+
+  // 2) Then narrow to the budget, if any cars fit
   if (prefs.budget) {
-    const inBudget = cars.filter(
+    const inBudget = pool.filter(
       (c) => c.price >= prefs.budget.min && c.price <= prefs.budget.max
     );
     if (inBudget.length > 0) pool = inBudget;
   }
 
+  // 3) Rank what's left by fuel, usage and seats
   const ranked = pool
     .map((car) => ({ ...car, score: scoreCar(car, prefs) }))
     .sort((a, b) => b.score - a.score);
@@ -222,18 +247,14 @@ app.post("/", (req, res) => {
   const second = ranked[1];
 
   let responseText;
-  if (!best || best.score === 0) {
+  if (!best) {
     responseText = "I couldn't find a close match. Try a different budget or fuel type.";
   } else {
     responseText = `Based on what you told me, I'd recommend the ${best.name}, priced around ₹${best.price} Lakh.`;
-    if (second && second.score > 0) {
+    if (second) {
       responseText += ` Another good option is the ${second.name} (₹${second.price} Lakh).`;
     }
   }
 
   res.json({ fulfillmentText: responseText });
-});
-
-const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log("Webhook listening on port " + listener.address().port);
 });
