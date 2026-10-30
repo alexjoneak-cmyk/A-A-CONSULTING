@@ -216,7 +216,7 @@ app.post("/", (req, res) => {
       bodyType: findByValue(params, BODY_TYPES, ["body-type", "bodytype", "body_type", "car-type"]),
       fuelType: findByValue(params, FUEL_TYPES, ["fuel-type", "fuel_type", "fueltype"]),
       usage: usage,
-      passengers: parsePassengers(first(params.passengers))
+      passengers: parsePassengers(first(params.passengers || params.passengercount))
     };
     console.log("PREFS USED:", JSON.stringify(prefs));
 
